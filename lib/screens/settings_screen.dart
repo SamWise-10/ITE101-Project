@@ -2,196 +2,317 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/glass.dart';
 
-class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
 
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
-          _buildSectionHeader(context, 'Appearance'),
-          _buildThemeToggle(context),
-          const Divider(),
-          _buildSectionHeader(context, 'Account'),
-          _buildAccountSettings(context),
-          const Divider(),
-          _buildSectionHeader(context, 'About'),
-          _buildAboutSettings(context),
+          const _SectionLabel(label: 'Appearance'),
+          _buildThemeTile(context, cs),
+          const SizedBox(height: 16),
+          const _SectionLabel(label: 'Account'),
+          _buildAccountCard(context, cs),
+          const SizedBox(height: 16),
+          const _SectionLabel(label: 'About'),
+          _buildAboutCard(context, cs),
         ],
       ),
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-      ),
-    );
-  }
-
-  Widget _buildThemeToggle(BuildContext context) {
+  Widget _buildThemeTile(BuildContext context, ColorScheme cs) {
     return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, _) {
-        return ListTile(
-          leading: Icon(
-            themeProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
-          ),
-          title: const Text('Dark Mode'),
+      builder: (context, theme, _) {
+        return _SettingsTile(
+          icon: theme.isDarkMode ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+          title: 'Dark Mode',
+          subtitle: theme.isDarkMode ? 'Dark theme active' : 'Light theme active',
           trailing: Switch(
-            value: themeProvider.isDarkMode,
-            onChanged: (value) {
-              themeProvider.setDarkMode(value);
-            },
+            value: theme.isDarkMode,
+            onChanged: theme.setDarkMode,
           ),
         );
       },
     );
   }
 
-  Widget _buildAccountSettings(BuildContext context) {
+  Widget _buildAccountCard(BuildContext context, ColorScheme cs) {
     return Consumer<AuthProvider>(
-      builder: (context, authProvider, _) {
+      builder: (context, auth, _) {
+        final user = auth.currentUser;
+        final username = user?['username'] ?? 'Not signed in';
+        final fullName = (user?['full_name'] as String? ?? '').trim();
+        final email = user?['email'] ?? '';
+        final role = user?['role'] ?? 'Guest';
+        final studentId = (user?['student_id'] as String? ?? '').trim();
+        final gradeLevel = (user?['grade_level'] as String? ?? '').trim();
+        final isStudent = role == 'Student';
+
         return Column(
           children: [
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text('User Account'),
-              subtitle: Text(authProvider.currentUser?['username'] ?? 'Not signed in'),
+            _SettingsTile(
+              icon: Icons.person_rounded,
+              title: 'Username',
+              subtitle: username,
             ),
-            ListTile(
-              leading: const Icon(Icons.mail),
-              title: const Text('Email'),
-              subtitle: Text(authProvider.currentUser?['email'] ?? 'No email'),
+            if (fullName.isNotEmpty)
+              _SettingsTile(
+                icon: Icons.badge_outlined,
+                title: 'Full Name',
+                subtitle: fullName,
+              ),
+            if (email.isNotEmpty)
+              _SettingsTile(
+                icon: Icons.email_outlined,
+                title: 'Email',
+                subtitle: email,
+              ),
+            if (isStudent && studentId.isNotEmpty)
+              _SettingsTile(
+                icon: Icons.tag_rounded,
+                title: 'Student ID',
+                subtitle: studentId,
+              ),
+            if (isStudent && gradeLevel.isNotEmpty)
+              _SettingsTile(
+                icon: Icons.school_outlined,
+                title: 'Grade Level',
+                subtitle: gradeLevel,
+              ),
+            _SettingsTile(
+              icon: Icons.verified_user_outlined,
+              title: 'Role',
+              subtitle: role,
             ),
-            ListTile(
-              leading: const Icon(Icons.badge),
-              title: const Text('Role'),
-              subtitle: Text(authProvider.currentUser?['role'] ?? 'Guest'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                _showLogoutConfirmation(context);
-              },
-            ),
+            const SizedBox(height: 4),
+            _LogoutTile(cs: cs),
           ],
         );
       },
     );
   }
 
-  Widget _buildAboutSettings(BuildContext context) {
+  Widget _buildAboutCard(BuildContext context, ColorScheme cs) {
     return Column(
       children: [
-        ListTile(
-          leading: const Icon(Icons.info),
-          title: const Text('App Version'),
-          subtitle: const Text('1.0.0'),
+        const _SettingsTile(
+          icon: Icons.info_outline_rounded,
+          title: 'App Version',
+          subtitle: '1.0.0',
         ),
-        ListTile(
-          leading: const Icon(Icons.description),
-          title: const Text('About TDLF-Educ'),
-          onTap: () {
-            _showAboutDialog(context);
-          },
+        _SettingsTile(
+          icon: Icons.description_outlined,
+          title: 'About TDLF-Educ',
+          subtitle: 'Tap to learn more',
+          onTap: () => showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text('About TDLF-Educ'),
+              content: const SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Version 1.0.0',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'TDLF-Educ is a multiplatform education app for ITE101. '
+                      'It supports offline-first usage — download books and take '
+                      'quizzes anytime, anywhere.',
+                      style: TextStyle(fontSize: 13, height: 1.6),
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'Features',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      '• Download books for offline reading\n'
+                      '• Take quizzes and track progress\n'
+                      '• Teacher role: manage books & quizzes\n'
+                      '• Teacher role: monitor student scores\n'
+                      '• Dark mode support',
+                      style: TextStyle(fontSize: 13, height: 1.6),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );
   }
+}
 
-  void _showLogoutConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              context.read<AuthProvider>().logout();
-              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+// ──────────────────────────────────────────────
+// Components
+// ──────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: cs.primary,
+          letterSpacing: 1.0,
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  const _SettingsTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: cs.outlineVariant),
+        boxShadow: AppDecoration.of(context).softShadow,
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: GradientIconBadge(
+          icon: icon,
+          size: 42,
+          iconSize: 20,
+          radius: 13,
+          shadow: const [],
+        ),
+        title: Text(
+          title,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: cs.onSurface),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
+        trailing: trailing ?? (onTap != null ? Icon(Icons.arrow_forward_ios_rounded, size: 14, color: cs.onSurfaceVariant) : null),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
+}
+
+class _LogoutTile extends StatelessWidget {
+  final ColorScheme cs;
+  const _LogoutTile({required this.cs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      decoration: BoxDecoration(
+        color: cs.errorContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: cs.error.withValues(alpha: 0.25)),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFB7185), Color(0xFFE11D48)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            child: const Text('Logout', style: TextStyle(color: Colors.white)),
+            borderRadius: BorderRadius.circular(13),
           ),
-        ],
+          child: const Icon(Icons.logout_rounded, color: Colors.white, size: 20),
+        ),
+        title: Text(
+          'Logout',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: cs.error,
+          ),
+        ),
+        subtitle: Text(
+          'Sign out of your account',
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        onTap: () => _confirmLogout(context),
       ),
     );
   }
 
-  void _showAboutDialog(BuildContext context) {
+  void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('About TDLF-Educ'),
-        content: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'TDLF-Educ',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              SizedBox(height: 12),
-              Text(
-                'Version: 1.0.0',
-                style: TextStyle(fontSize: 14),
-              ),
-              SizedBox(height: 12),
-              Text(
-                'TDLF-Educ is a multiplatform education application designed to make learning accessible and engaging. With offline-first capabilities, you can download books and take quizzes anytime, anywhere.',
-                style: TextStyle(fontSize: 12, height: 1.6),
-              ),
-              SizedBox(height: 12),
-              Text(
-                'Features:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                '• Download educational books for offline reading\n'
-                '• Take quizzes and track your progress\n'
-                '• Single login with persistent session\n'
-                '• Dark mode support\n'
-                '• Role-based features (Student, Teacher, Guest)',
-                style: TextStyle(fontSize: 12, height: 1.6),
-              ),
-            ],
-          ),
-        ),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to sign out?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: cs.error),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await context.read<AuthProvider>().logout();
+              if (context.mounted) {
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/login',
+                  (route) => false,
+                );
+              }
+            },
+            child: const Text('Logout'),
           ),
         ],
       ),

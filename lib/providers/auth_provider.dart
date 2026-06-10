@@ -3,7 +3,7 @@ import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
-  
+
   Map<String, dynamic>? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
@@ -27,13 +27,16 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
     required String role,
+    String course = '',
+    String fullName = '',
+    String studentId = '',
+    String gradeLevel = '',
   }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      // Validate inputs
       if (username.isEmpty || email.isEmpty || password.isEmpty) {
         _errorMessage = 'All fields are required';
         _isLoading = false;
@@ -41,49 +44,30 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
-      // Check if email exists
-      if (await _authService.emailExists(email)) {
-        _errorMessage = 'Email already exists';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-
-      // Check if username exists
-      if (await _authService.usernameExists(username)) {
-        _errorMessage = 'Username already exists';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-
-      final success = await _authService.signUp(
+      final error = await _authService.signUp(
         username: username,
         email: email,
         password: password,
         role: role,
+        course: course,
+        fullName: fullName,
+        studentId: studentId,
+        gradeLevel: gradeLevel,
       );
 
       _isLoading = false;
-      if (success) {
-        _errorMessage = null;
-      } else {
-        _errorMessage = 'Sign up failed';
-      }
+      _errorMessage = error;
       notifyListeners();
-      return success;
+      return error == null;
     } catch (e) {
-      _errorMessage = 'An error occurred: $e';
+      _errorMessage = 'An error occurred';
       _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
-  Future<bool> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<bool> signIn({required String email, required String password}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -96,36 +80,47 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
-      final success = await _authService.signIn(
-        email: email,
-        password: password,
-      );
+      final error = await _authService.signIn(email: email, password: password);
 
-      if (success) {
+      if (error == null) {
         _currentUser = await _authService.getCurrentUser();
-        _errorMessage = null;
-      } else {
-        _errorMessage = 'Invalid email or password';
       }
 
       _isLoading = false;
+      _errorMessage = error;
       notifyListeners();
-      return success;
+      return error == null;
     } catch (e) {
-      _errorMessage = 'An error occurred: $e';
+      _errorMessage = 'An error occurred';
       _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
-  Future<void> logout() async {
-    if (_currentUser != null) {
-      await _authService.logOut(userId: _currentUser!['id']);
-      _currentUser = null;
-      _errorMessage = null;
-      notifyListeners();
+  Future<bool> updateCurrentUser(Map<String, dynamic> data) async {
+    if (_currentUser == null) return false;
+    _isLoading = true;
+    notifyListeners();
+
+    final success = await _authService.updateUser(_currentUser!['id'] as String, data);
+    if (success) {
+      _currentUser = await _authService.getCurrentUser();
     }
+    _isLoading = false;
+    notifyListeners();
+    return success;
+  }
+
+  Future<List<Map<String, dynamic>>> getAllTeachers() async {
+    return await _authService.getAllTeachers();
+  }
+
+  Future<void> logout() async {
+    await _authService.logOut();
+    _currentUser = null;
+    _errorMessage = null;
+    notifyListeners();
   }
 
   void clearError() {

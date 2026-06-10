@@ -1,96 +1,109 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
-import '../config/app_config.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Cloud data access via Supabase (Postgres tables), plus a Dio client used
+/// only to download book PDFs from their public URLs.
+///
+/// Read methods (`getBooks`, `getQuizzes`) intentionally let network errors
+/// propagate so callers can fall back to their local SQLite cache when offline.
+/// Write methods swallow errors and report success/failure via their return.
 class ApiService {
   static final ApiService _instance = ApiService._internal();
-  late Dio _dio;
+  final Dio _dio = Dio();
 
-  factory ApiService() {
-    return _instance;
-  }
+  factory ApiService() => _instance;
 
-  ApiService._internal() {
-    _dio = Dio(
-      BaseOptions(
-        baseUrl: AppConfig.apiBaseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
-      ),
-    );
+  ApiService._internal();
 
-    _dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          return handler.next(options);
-        },
-        onResponse: (response, handler) {
-          return handler.next(response);
-        },
-        onError: (error, handler) {
-          return handler.next(error);
-        },
-      ),
-    );
-  }
+  SupabaseClient get _sb => Supabase.instance.client;
 
   Future<List<Map<String, dynamic>>> getBooks() async {
-    try {
-      final response = await _dio.get(AppConfig.booksEndpoint);
-      if (response.statusCode == 200) {
-        final data = response.data as List;
-        if (data.isNotEmpty) {
-          final books = (data[0]['data'] as List).cast<Map<String, dynamic>>();
-          return books;
-        }
-      }
-      return [];
-    } catch (e) {
-      print('Error fetching books: $e');
-      return [];
-    }
+    final data = await _sb.from('books').select();
+    return List<Map<String, dynamic>>.from(data);
   }
 
   Future<List<Map<String, dynamic>>> getQuizzes() async {
-    try {
-      final response = await _dio.get(AppConfig.quizzesEndpoint);
-      if (response.statusCode == 200) {
-        final data = response.data as List;
-        if (data.isNotEmpty) {
-          final quizzes = (data[0]['data'] as List).cast<Map<String, dynamic>>();
-          return quizzes;
-        }
-      }
-      return [];
-    } catch (e) {
-      print('Error fetching quizzes: $e');
-      return [];
-    }
+    final data = await _sb.from('quizzes').select();
+    return List<Map<String, dynamic>>.from(data);
   }
 
   Future<List<Map<String, dynamic>>> getCourses() async {
+    final data = await _sb.from('courses').select();
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// Downloads a book PDF and returns the local file path, or null on failure.
+  Future<String?> downloadBook(String bookId, String url) async {
     try {
-      final response = await _dio.get(AppConfig.coursesEndpoint);
-      if (response.statusCode == 200) {
-        final data = response.data as List;
-        if (data.isNotEmpty) {
-          final courses = (data[0]['data'] as List).cast<Map<String, dynamic>>();
-          return courses;
-        }
+      final dir = await getApplicationDocumentsDirectory();
+      final booksDir = Directory(p.join(dir.path, 'books'));
+      if (!await booksDir.exists()) {
+        await booksDir.create(recursive: true);
       }
-      return [];
-    } catch (e) {
-      print('Error fetching courses: $e');
-      return [];
+      final savePath = p.join(booksDir.path, '$bookId.pdf');
+      final response = await _dio.download(url, savePath);
+      if (response.statusCode == 200) return savePath;
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 
-  Future<bool> downloadBook(String url) async {
+  Future<Map<String, dynamic>?> addBook(Map<String, dynamic> data) async {
     try {
-      final response = await _dio.download(url, './downloaded_book.pdf');
-      return response.statusCode == 200;
-    } catch (e) {
-      print('Error downloading book: $e');
+      final res = await _sb.from('books').insert(data).select().single();
+      return Map<String, dynamic>.from(res);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> deleteBook(String bookId) async {
+    try {
+      await _sb.from('books').delete().eq('book_id', bookId);
+      return true;
+    } catch (_) {
       return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> addQuiz(Map<String, dynamic> data) async {
+    try {
+      final res = await _sb.from('quizzes').insert(data).select().single();
+      return Map<String, dynamic>.from(res);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> deleteQuiz(String quizId) async {
+    try {
+      await _sb.from('quizzes').delete().eq('quiz_id', quizId);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> submitQuizResults(Map<String, dynamic> data) async {
+    try {
+      await _sb.from('quiz_results').insert(data);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// All submitted quiz results (teacher "monitor students" view).
+  Future<List<Map<String, dynamic>>> getStudents() async {
+    try {
+      final data = await _sb.from('quiz_results').select();
+      return List<Map<String, dynamic>>.from(data);
+    } catch (_) {
+      return [];
     }
   }
 }

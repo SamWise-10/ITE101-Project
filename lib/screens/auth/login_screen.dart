@@ -2,272 +2,491 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../config/app_config.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/aurora_background.dart';
+import '../../widgets/glass.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  late TextEditingController _emailController;
-  late TextEditingController _passwordController;
+  late TextEditingController _emailCtrl;
+  late TextEditingController _passwordCtrl;
+  late TextEditingController _usernameCtrl;
+  late TextEditingController _signupEmailCtrl;
+  late TextEditingController _signupPasswordCtrl;
+  late TextEditingController _fullNameCtrl;
+  late TextEditingController _studentIdCtrl;
   bool _isSignUp = false;
-  late TextEditingController _usernameController;
-  late TextEditingController _signupPasswordController;
-  late TextEditingController _signupEmailController;
+  bool _showPassword = false;
+  bool _showSignupPassword = false;
   String _selectedRole = AppConfig.userRoles[0];
+  String _selectedCourse = AppConfig.courses[0];
+  String _selectedGrade = AppConfig.gradeLevels[0];
 
   @override
   void initState() {
     super.initState();
-    _emailController = TextEditingController();
-    _passwordController = TextEditingController();
-    _usernameController = TextEditingController();
-    _signupPasswordController = TextEditingController();
-    _signupEmailController = TextEditingController();
+    _emailCtrl = TextEditingController();
+    _passwordCtrl = TextEditingController();
+    _usernameCtrl = TextEditingController();
+    _signupEmailCtrl = TextEditingController();
+    _signupPasswordCtrl = TextEditingController();
+    _fullNameCtrl = TextEditingController();
+    _studentIdCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _usernameController.dispose();
-    _signupPasswordController.dispose();
-    _signupEmailController.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _usernameCtrl.dispose();
+    _signupEmailCtrl.dispose();
+    _signupPasswordCtrl.dispose();
+    _fullNameCtrl.dispose();
+    _studentIdCtrl.dispose();
     super.dispose();
   }
 
-  void _handleSignIn(BuildContext context) async {
-    final authProvider = context.read<AuthProvider>();
-    final success = await authProvider.signIn(
-      email: _emailController.text,
-      password: _passwordController.text,
+  Future<void> _handleSignIn() async {
+    final auth = context.read<AuthProvider>();
+    final success = await auth.signIn(
+      email: _emailCtrl.text.trim(),
+      password: _passwordCtrl.text,
     );
-
     if (success && mounted) {
       Navigator.of(context).pushReplacementNamed('/home');
     }
   }
 
-  void _handleSignUp(BuildContext context) async {
-    final authProvider = context.read<AuthProvider>();
-    final success = await authProvider.signUp(
-      username: _usernameController.text,
-      email: _signupEmailController.text,
-      password: _signupPasswordController.text,
+  Future<void> _handleSignUp() async {
+    final auth = context.read<AuthProvider>();
+    final isStudent = _selectedRole == 'Student';
+    final success = await auth.signUp(
+      username: _usernameCtrl.text.trim(),
+      email: _signupEmailCtrl.text.trim(),
+      password: _signupPasswordCtrl.text,
       role: _selectedRole,
+      course: _selectedRole == 'Teacher' ? _selectedCourse : '',
+      fullName: _fullNameCtrl.text.trim(),
+      studentId: isStudent ? _studentIdCtrl.text.trim() : '',
+      gradeLevel: isStudent ? _selectedGrade : '',
     );
-
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created successfully. Please sign in.')),
+        const SnackBar(content: Text('Account created! Please sign in.')),
       );
+      _emailCtrl.text = _signupEmailCtrl.text;
+      _usernameCtrl.clear();
+      _signupEmailCtrl.clear();
+      _signupPasswordCtrl.clear();
+      _fullNameCtrl.clear();
+      _studentIdCtrl.clear();
       setState(() => _isSignUp = false);
-      _emailController.text = _signupEmailController.text;
-      _clearSignUpFields();
     }
-  }
-
-  void _clearSignUpFields() {
-    _usernameController.clear();
-    _signupEmailController.clear();
-    _signupPasswordController.clear();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(height: MediaQuery.of(context).size.height * 0.05),
-              Text(
-                AppConfig.appName,
-                style: Theme.of(context).textTheme.displayLarge,
+      body: AuroraBackground(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(22, 32, 22, 32),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Column(
+                  children: [
+                    _buildHeader(context),
+                    const SizedBox(height: 30),
+                    _buildCard(context),
+                    const SizedBox(height: 22),
+                    _buildFooter(context),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Education Platform',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              SizedBox(height: MediaQuery.of(context).size.height * 0.08),
-              Consumer<AuthProvider>(
-                builder: (context, authProvider, _) {
-                  return _isSignUp ? _buildSignUpForm(context, authProvider) : _buildSignInForm(context, authProvider);
-                },
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSignInForm(BuildContext context, AuthProvider authProvider) {
+  Widget _buildHeader(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final decor = AppDecoration.of(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const GradientIconBadge(
+          icon: Icons.school_rounded,
+          size: 84,
+          iconSize: 46,
+          radius: 26,
+        ),
+        const SizedBox(height: 20),
+        ShaderMask(
+          shaderCallback: (rect) => decor.brand.createShader(rect),
+          child: const Text(
+            'TDLF-Educ',
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: -0.8,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
         Text(
-          'Sign In',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 24),
-        if (authProvider.errorMessage != null)
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              authProvider.errorMessage!,
-              style: const TextStyle(color: Colors.red),
-            ),
+          'Learn smarter — anytime, offline.',
+          style: TextStyle(
+            fontSize: 14,
+            color: cs.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
           ),
-        if (authProvider.errorMessage != null) const SizedBox(height: 16),
-        TextField(
-          controller: _emailController,
-          decoration: const InputDecoration(
-            labelText: 'Email',
-            prefixIcon: Icon(Icons.email),
-          ),
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _passwordController,
-          decoration: const InputDecoration(
-            labelText: 'Password',
-            prefixIcon: Icon(Icons.lock),
-          ),
-          obscureText: true,
-        ),
-        const SizedBox(height: 24),
-        ElevatedButton(
-          onPressed: authProvider.isLoading ? null : () => _handleSignIn(context),
-          child: authProvider.isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Sign In'),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Don\'t have an account? ',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            GestureDetector(
-              onTap: () => setState(() => _isSignUp = true),
-              child: Text(
-                'Sign Up',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-            ),
-          ],
         ),
       ],
     );
   }
 
-  Widget _buildSignUpForm(BuildContext context, AuthProvider authProvider) {
+  Widget _buildCard(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return GlassCard(
+      strong: true,
+      radius: 28,
+      blur: 22,
+      padding: const EdgeInsets.fromLTRB(24, 26, 24, 26),
+      child: Consumer<AuthProvider>(
+        builder: (context, auth, _) {
+          return AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: _isSignUp
+                ? _buildSignUpForm(context, auth, cs)
+                : _buildSignInForm(context, auth, cs),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Text(
+      'Your learning companion · v${AppConfig.appVersion}',
+      style: TextStyle(
+        fontSize: 12,
+        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+      ),
+    );
+  }
+
+  // ── Sign In ────────────────────────────────────────────────────────────────
+
+  Widget _buildSignInForm(
+      BuildContext context, AuthProvider auth, ColorScheme cs) {
     return Column(
+      key: const ValueKey('signin'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Create Account',
+          'Welcome back',
           style: Theme.of(context).textTheme.headlineSmall,
         ),
-        const SizedBox(height: 24),
-        if (authProvider.errorMessage != null)
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              authProvider.errorMessage!,
-              style: const TextStyle(color: Colors.red),
-            ),
-          ),
-        if (authProvider.errorMessage != null) const SizedBox(height: 16),
-        TextField(
-          controller: _usernameController,
-          decoration: const InputDecoration(
-            labelText: 'Username',
-            prefixIcon: Icon(Icons.person),
-          ),
+        const SizedBox(height: 4),
+        Text(
+          'Sign in to continue learning',
+          style: TextStyle(fontSize: 13.5, color: cs.onSurfaceVariant),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 22),
+        if (auth.errorMessage != null) ...[
+          _ErrorBanner(message: auth.errorMessage!),
+          const SizedBox(height: 16),
+        ],
         TextField(
-          controller: _signupEmailController,
+          controller: _emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
           decoration: const InputDecoration(
             labelText: 'Email',
-            prefixIcon: Icon(Icons.email),
+            prefixIcon: Icon(Icons.alternate_email_rounded),
           ),
-          keyboardType: TextInputType.emailAddress,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         TextField(
-          controller: _signupPasswordController,
-          decoration: const InputDecoration(
+          controller: _passwordCtrl,
+          obscureText: !_showPassword,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => auth.isLoading ? null : _handleSignIn(),
+          decoration: InputDecoration(
             labelText: 'Password',
-            prefixIcon: Icon(Icons.lock),
-          ),
-          obscureText: true,
-        ),
-        const SizedBox(height: 16),
-        DropdownButton<String>(
-          isExpanded: true,
-          value: _selectedRole,
-          items: AppConfig.userRoles
-              .map((role) => DropdownMenuItem(value: role, child: Text(role)))
-              .toList(),
-          onChanged: (value) => setState(() => _selectedRole = value ?? _selectedRole),
-        ),
-        const SizedBox(height: 24),
-        ElevatedButton(
-          onPressed: authProvider.isLoading ? null : () => _handleSignUp(context),
-          child: authProvider.isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Sign Up'),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Already have an account? ',
-              style: Theme.of(context).textTheme.bodyMedium,
+            prefixIcon: const Icon(Icons.lock_outline_rounded),
+            suffixIcon: IconButton(
+              icon: Icon(_showPassword
+                  ? Icons.visibility_off_rounded
+                  : Icons.visibility_rounded),
+              onPressed: () => setState(() => _showPassword = !_showPassword),
             ),
-            GestureDetector(
-              onTap: () => setState(() => _isSignUp = false),
-              child: Text(
-                'Sign In',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.w600,
-                    ),
+          ),
+        ),
+        const SizedBox(height: 26),
+        GradientButton(
+          label: 'Sign In',
+          icon: Icons.arrow_forward_rounded,
+          loading: auth.isLoading,
+          onPressed: auth.isLoading ? null : _handleSignIn,
+        ),
+        const SizedBox(height: 18),
+        _SwitchRow(
+          prompt: "Don't have an account?",
+          action: 'Sign Up',
+          onTap: () => setState(() => _isSignUp = true),
+        ),
+      ],
+    );
+  }
+
+  // ── Sign Up ────────────────────────────────────────────────────────────────
+
+  Widget _buildSignUpForm(
+      BuildContext context, AuthProvider auth, ColorScheme cs) {
+    return Column(
+      key: const ValueKey('signup'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Create account',
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Join TDLF-Educ today',
+          style: TextStyle(fontSize: 13.5, color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(height: 22),
+        if (auth.errorMessage != null) ...[
+          _ErrorBanner(message: auth.errorMessage!),
+          const SizedBox(height: 16),
+        ],
+        TextField(
+          controller: _usernameCtrl,
+          textInputAction: TextInputAction.next,
+          decoration: const InputDecoration(
+            labelText: 'Username',
+            prefixIcon: Icon(Icons.person_outline_rounded),
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _fullNameCtrl,
+          textInputAction: TextInputAction.next,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Full Name',
+            prefixIcon: Icon(Icons.badge_outlined),
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _signupEmailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          decoration: const InputDecoration(
+            labelText: 'Email',
+            prefixIcon: Icon(Icons.alternate_email_rounded),
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _signupPasswordCtrl,
+          obscureText: !_showSignupPassword,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            labelText: 'Password',
+            prefixIcon: const Icon(Icons.lock_outline_rounded),
+            suffixIcon: IconButton(
+              icon: Icon(_showSignupPassword
+                  ? Icons.visibility_off_rounded
+                  : Icons.visibility_rounded),
+              onPressed: () =>
+                  setState(() => _showSignupPassword = !_showSignupPassword),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        InputDecorator(
+          decoration: const InputDecoration(
+            labelText: 'Role',
+            prefixIcon: Icon(Icons.verified_user_outlined),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedRole,
+              isDense: true,
+              isExpanded: true,
+              borderRadius: BorderRadius.circular(16),
+              items: AppConfig.userRoles
+                  .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) setState(() => _selectedRole = v);
+              },
+            ),
+          ),
+        ),
+        if (_selectedRole == 'Teacher') ...[
+          const SizedBox(height: 14),
+          InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Course You Teach',
+              prefixIcon: Icon(Icons.class_outlined),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedCourse,
+                isDense: true,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(16),
+                items: AppConfig.courses
+                    .map((c) => DropdownMenuItem(
+                          value: c,
+                          child: Text(c, overflow: TextOverflow.ellipsis),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => _selectedCourse = v);
+                },
               ),
             ),
-          ],
+          ),
+        ],
+        if (_selectedRole == 'Student') ...[
+          const SizedBox(height: 14),
+          TextField(
+            controller: _studentIdCtrl,
+            textInputAction: TextInputAction.next,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(
+              labelText: 'Student ID',
+              prefixIcon: Icon(Icons.badge_rounded),
+            ),
+          ),
+          const SizedBox(height: 14),
+          InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Grade Level',
+              prefixIcon: Icon(Icons.grade_outlined),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedGrade,
+                isDense: true,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(16),
+                items: AppConfig.gradeLevels
+                    .map((g) => DropdownMenuItem(
+                          value: g,
+                          child: Text(g, overflow: TextOverflow.ellipsis),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => _selectedGrade = v);
+                },
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 26),
+        GradientButton(
+          label: 'Create Account',
+          icon: Icons.auto_awesome_rounded,
+          loading: auth.isLoading,
+          onPressed: auth.isLoading ? null : _handleSignUp,
+        ),
+        const SizedBox(height: 18),
+        _SwitchRow(
+          prompt: 'Already have an account?',
+          action: 'Sign In',
+          onTap: () => setState(() => _isSignUp = false),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Shared bits ───────────────────────────────────────────────────────────────
+
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+  const _ErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: cs.errorContainer.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.error.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline_rounded, size: 18, color: cs.error),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: cs.onErrorContainer,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  final String prompt;
+  final String action;
+  final VoidCallback onTap;
+
+  const _SwitchRow({
+    required this.prompt,
+    required this.action,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          '$prompt ',
+          style: TextStyle(fontSize: 13.5, color: cs.onSurfaceVariant),
+        ),
+        GestureDetector(
+          onTap: onTap,
+          child: Text(
+            action,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+              color: cs.primary,
+            ),
+          ),
         ),
       ],
     );

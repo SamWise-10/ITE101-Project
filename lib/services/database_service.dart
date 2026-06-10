@@ -39,6 +39,10 @@ class DatabaseService {
         email TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         role TEXT NOT NULL,
+        course TEXT DEFAULT '',
+        full_name TEXT DEFAULT '',
+        student_id TEXT DEFAULT '',
+        grade_level TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         is_logged_in BOOLEAN DEFAULT 0
       )
@@ -98,7 +102,17 @@ class DatabaseService {
   }
 
   Future<void> _upgradeDatabase(Database db, int oldVersion, int newVersion) async {
-    // Handle database upgrades here
+    if (oldVersion < 2) {
+      await db.execute("ALTER TABLE users ADD COLUMN course TEXT DEFAULT ''");
+    }
+    if (oldVersion < 3) {
+      await db.execute("ALTER TABLE books ADD COLUMN course_id TEXT DEFAULT ''");
+    }
+    if (oldVersion < 4) {
+      await db.execute("ALTER TABLE users ADD COLUMN full_name TEXT DEFAULT ''");
+      await db.execute("ALTER TABLE users ADD COLUMN student_id TEXT DEFAULT ''");
+      await db.execute("ALTER TABLE users ADD COLUMN grade_level TEXT DEFAULT ''");
+    }
   }
 
   Future<void> closeDatabase() async {
