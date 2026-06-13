@@ -35,20 +35,86 @@ class ApiService {
     return List<Map<String, dynamic>>.from(data);
   }
 
+  /// Adds a course (teachers only — enforced by Supabase RLS).
+  Future<bool> addCourse(Map<String, dynamic> data) async {
+    try {
+      await _sb.from('courses').insert(data);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteCourse(String courseId) async {
+    try {
+      await _sb.from('courses').delete().eq('id', courseId);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Downloads a book PDF and returns the local file path, or null on failure.
-  Future<String?> downloadBook(String bookId, String url) async {
+  ///
+  /// [onProgress] reports (received, total) bytes. When [validatePdf] is true the
+  /// saved file is checked for the `%PDF` header and discarded if it's actually
+  /// an HTML error page (common when an Archive.org file isn't really available).
+  Future<String?> downloadBook(
+    String bookId,
+    String url, {
+    String ext = 'pdf',
+    void Function(int received, int total)? onProgress,
+    bool validatePdf = false,
+  }) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final booksDir = Directory(p.join(dir.path, 'books'));
       if (!await booksDir.exists()) {
         await booksDir.create(recursive: true);
       }
-      final savePath = p.join(booksDir.path, '$bookId.pdf');
-      final response = await _dio.download(url, savePath);
-      if (response.statusCode == 200) return savePath;
+      final savePath = p.join(booksDir.path, '$bookId.$ext');
+      final response = await _dio.download(
+        url,
+        savePath,
+        onReceiveProgress: onProgress,
+        options: Options(
+          // Allow large scans, but fail if the stream stalls (no data for 60s).
+          receiveTimeout: const Duration(seconds: 60),
+          sendTimeout: const Duration(seconds: 60),
+          followRedirects: true,
+          maxRedirects: 5,
+          headers: const {'User-Agent': 'TDLF-Educ/1.0'},
+          validateStatus: (s) => s != null && s >= 200 && s < 400,
+        ),
+      );
+      if (response.statusCode == 200) {
+        if (validatePdf && !await _looksLikePdf(savePath)) {
+          try {
+            await File(savePath).delete();
+          } catch (_) {}
+          return null;
+        }
+        return savePath;
+      }
       return null;
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Checks the first bytes for the `%PDF` magic number.
+  Future<bool> _looksLikePdf(String path) async {
+    try {
+      final raf = await File(path).open();
+      final bytes = await raf.read(5);
+      await raf.close();
+      return bytes.length >= 4 &&
+          bytes[0] == 0x25 && // %
+          bytes[1] == 0x50 && // P
+          bytes[2] == 0x44 && // D
+          bytes[3] == 0x46; // F
+    } catch (_) {
+      return false;
     }
   }
 

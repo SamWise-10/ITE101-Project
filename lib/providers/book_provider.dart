@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
+import '../services/open_library_service.dart';
 
 class BookProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
   final DatabaseService _dbService = DatabaseService();
+  final OpenLibraryService _openLibrary = OpenLibraryService();
 
   List<Map<String, dynamic>> _books = [];
   List<Map<String, dynamic>> _downloadedBooks = [];
@@ -13,12 +16,27 @@ class BookProvider extends ChangeNotifier {
   final Set<String> _downloadingIds = {};
   final Set<String> _failedIds = {};
 
+  // ── Open Library online search ──────────────────────────────────────────
+  List<Map<String, dynamic>> _onlineResults = [];
+  bool _onlineLoading = false;
+  String? _onlineError;
+  String _onlineQuery = '';
+  final Map<String, double> _downloadProgress = {};
+
   List<Map<String, dynamic>> get books => _books;
   List<Map<String, dynamic>> get downloadedBooks => _downloadedBooks;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool isDownloading(String id) => _downloadingIds.contains(id);
   bool hasFailed(String id) => _failedIds.contains(id);
+
+  List<Map<String, dynamic>> get onlineResults => _onlineResults;
+  bool get onlineLoading => _onlineLoading;
+  String? get onlineError => _onlineError;
+  String get onlineQuery => _onlineQuery;
+  bool isBookDownloaded(String id) =>
+      _downloadedBooks.any((b) => b['id'] == id);
+  double? downloadProgress(String id) => _downloadProgress[id];
 
   Future<void> fetchBooks() async {
     // Offline-first: show the local cache immediately…
@@ -166,4 +184,130 @@ class BookProvider extends ChangeNotifier {
             (book['book_id'] as String).toLowerCase().contains(query.toLowerCase()))
         .toList();
   }
+
+  // ── Open Library: discover books to read / download ──────────────────────
+
+  /// Preloads Discover with featured public-domain classics so the tab is ready.
+  Future<void> loadDiscoverDefault() async {
+    if (_onlineQuery.isNotEmpty || _onlineResults.isNotEmpty) return;
+    _onlineLoading = true;
+    _onlineError = null;
+    notifyListeners();
+    try {
+      _onlineResults = await _openLibrary.browse();
+    } catch (_) {
+      // Leave empty — the user can still search.
+    } finally {
+      _onlineLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> searchOnline(String query) async {
+    _onlineQuery = query.trim();
+    _onlineLoading = true;
+    _onlineError = null;
+    notifyListeners();
+    try {
+      if (_onlineQuery.isEmpty) {
+        _onlineResults = await _openLibrary.browse();
+      } else {
+        _onlineResults = await _openLibrary.search(_onlineQuery);
+        if (_onlineResults.isEmpty) {
+          _onlineError = 'No books found for "$_onlineQuery".';
+        }
+      }
+    } catch (_) {
+      _onlineResults = [];
+      _onlineError = 'Search failed. Check your internet connection.';
+    } finally {
+      _onlineLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void clearOnlineSearch() {
+    _onlineQuery = '';
+    _onlineResults = [];
+    _onlineError = null;
+    notifyListeners();
+    loadDiscoverDefault();
+  }
+
+  /// Downloads a public-domain book's PDF from the Internet Archive and stores
+  /// it so it appears in the "Downloaded" tab and works offline.
+  ///
+  /// Returns [OnlineDownloadResult.noPdf] when the item has no downloadable PDF
+  /// (read-online only) so the UI can fall back gracefully.
+  Future<OnlineDownloadResult> downloadOnlineBook(
+      Map<String, dynamic> book) async {
+    final id = book['id'] as String;
+    final ia = book['ia'] as String?;
+    if (ia == null) return OnlineDownloadResult.noPdf;
+
+    _downloadingIds.add(id);
+    _failedIds.remove(id);
+    _downloadProgress[id] = 0;
+    notifyListeners();
+    try {
+      // Resolve the item's real PDF file (filename varies; may not exist).
+      final url = await _openLibrary.resolveArchivePdf(ia);
+      if (url == null) {
+        _downloadingIds.remove(id);
+        _downloadProgress.remove(id);
+        notifyListeners();
+        return OnlineDownloadResult.noPdf;
+      }
+
+      var lastPct = -1;
+      final savedPath = await _apiService.downloadBook(
+        id,
+        url,
+        validatePdf: true,
+        onProgress: (received, total) {
+          if (total > 0) {
+            final pct = (received / total * 100).floor();
+            if (pct != lastPct) {
+              lastPct = pct;
+              _downloadProgress[id] = received / total;
+              notifyListeners();
+            }
+          }
+        },
+      );
+      _downloadingIds.remove(id);
+      _downloadProgress.remove(id);
+      if (savedPath != null) {
+        final db = await _dbService.database;
+        await db.insert(
+          'books',
+          {
+            'id': id,
+            'name': book['title'],
+            'link': url,
+            'picture_url': book['cover_url'] ?? '',
+            'course_id': '',
+            'is_downloaded': 1,
+            'downloaded_path': savedPath,
+            'downloaded_at': DateTime.now().toIso8601String(),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        await loadDownloadedBooks();
+        return OnlineDownloadResult.success;
+      }
+      _failedIds.add(id);
+      notifyListeners();
+      return OnlineDownloadResult.failed;
+    } catch (_) {
+      _downloadingIds.remove(id);
+      _downloadProgress.remove(id);
+      _failedIds.add(id);
+      notifyListeners();
+      return OnlineDownloadResult.failed;
+    }
+  }
 }
+
+/// Outcome of attempting to download a book discovered online.
+enum OnlineDownloadResult { success, noPdf, failed }

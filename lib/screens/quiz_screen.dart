@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/quiz_provider.dart';
+import '../providers/course_provider.dart';
 import '../config/app_config.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass.dart';
@@ -25,6 +26,7 @@ class _QuizScreenState extends State<QuizScreen>
     _tabController = TabController(length: _isTeacher ? 1 : 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<QuizProvider>().fetchQuizzes();
+      context.read<CourseProvider>().fetchCourses();
       if (!_isTeacher) {
         final auth = context.read<AuthProvider>();
         if (auth.currentUser != null) {
@@ -79,15 +81,11 @@ class _QuizScreenState extends State<QuizScreen>
     final answerCtrl = TextEditingController();
     final reasonCtrl = TextEditingController();
     String quizType = 'open_ended';
-    String courseId = 'course-001';
     final cs = Theme.of(context).colorScheme;
 
-    const courses = [
-      {'id': 'course-001', 'title': 'Computer Fundamentals'},
-      {'id': 'course-002', 'title': 'Basic Mathematics'},
-      {'id': 'course-003', 'title': 'Science and Technology'},
-      {'id': 'course-004', 'title': 'English Communication'},
-    ];
+    final courses = context.read<CourseProvider>().courses;
+    String courseId =
+        courses.isNotEmpty ? courses.first['id'] as String : 'course-001';
 
     showDialog(
       context: context,
@@ -174,10 +172,12 @@ class _QuizScreenState extends State<QuizScreen>
                     child: DropdownButton<String>(
                       value: courseId,
                       isDense: true,
+                      isExpanded: true,
                       items: courses
                           .map((c) => DropdownMenuItem(
-                                value: c['id'],
-                                child: Text(c['title']!),
+                                value: c['id'] as String,
+                                child: Text(c['title'] as String,
+                                    overflow: TextOverflow.ellipsis),
                               ))
                           .toList(),
                       onChanged: (v) {
@@ -250,13 +250,6 @@ class _AvailableTabState extends State<_AvailableTab> {
   String _search = '';
   String _typeFilter = 'all'; // 'all' | 'true_false' | 'open_ended'
   final TextEditingController _searchCtrl = TextEditingController();
-
-  static const _courseNames = {
-    'course-001': 'Computer Fundamentals',
-    'course-002': 'Basic Mathematics',
-    'course-003': 'Science and Technology',
-    'course-004': 'English Communication',
-  };
 
   @override
   void dispose() {
@@ -363,7 +356,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                       for (final courseId in courseIds) ...[
                         const SizedBox(width: 8),
                         _buildChip(cs, courseId,
-                            _courseNames[courseId] ?? courseId),
+                            context.read<CourseProvider>().titleFor(courseId)),
                       ],
                     ],
                   ),
@@ -390,7 +383,7 @@ class _AvailableTabState extends State<_AvailableTab> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _courseNames[entry.key] ?? entry.key,
+                            context.read<CourseProvider>().titleFor(entry.key),
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/book_provider.dart';
+import '../providers/course_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass.dart';
 
@@ -56,21 +58,20 @@ class _BooksScreenState extends State<BooksScreen>
   String? _selectedCourseId;
   BookSort _sort = BookSort.titleAsc;
 
-  static const _courseMap = {
-    'course-001': 'Computer Fundamentals',
-    'course-002': 'Basic Mathematics',
-    'course-003': 'Science and Technology',
-    'course-004': 'English Communication',
-  };
-
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    // Hide the local search/filter row when the online "Discover" tab is active.
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
     _searchCtrl = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BookProvider>().fetchBooks();
       context.read<BookProvider>().loadDownloadedBooks();
+      context.read<BookProvider>().loadDiscoverDefault();
+      context.read<CourseProvider>().fetchCourses();
     });
   }
 
@@ -90,16 +91,19 @@ class _BooksScreenState extends State<BooksScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Books'),
-        actions: [_buildSortButton(cs)],
+        actions: [if (_tabController.index < 2) _buildSortButton(cs)],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(text: 'All Books'),
             Tab(text: 'Downloaded'),
+            Tab(text: 'Discover'),
           ],
         ),
       ),
-      floatingActionButton: _isTeacher
+      floatingActionButton: _isTeacher && _tabController.index < 2
           ? GradientFab(
               icon: Icons.add_rounded,
               label: 'Add Book',
@@ -108,52 +112,65 @@ class _BooksScreenState extends State<BooksScreen>
           : null,
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: TextField(
-              controller: _searchCtrl,
-              decoration: InputDecoration(
-                hintText: 'Search books...',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _searchCtrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear_rounded),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          setState(() {});
-                        },
-                      )
-                    : null,
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ),
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              children: [
-                _CourseChip(
-                  label: 'All',
-                  selected: _selectedCourseId == null,
-                  cs: cs,
-                  onTap: () => setState(() => _selectedCourseId = null),
+          if (_tabController.index < 2) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(
+                  hintText: 'Search books...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _searchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() {});
+                          },
+                        )
+                      : null,
                 ),
-                for (final entry in _courseMap.entries) ...[
-                  const SizedBox(width: 8),
-                  _CourseChip(
-                    label: entry.value,
-                    selected: _selectedCourseId == entry.key,
-                    cs: cs,
-                    onTap: () => setState(() => _selectedCourseId =
-                        _selectedCourseId == entry.key ? null : entry.key),
-                  ),
-                ],
-              ],
+                onChanged: (_) => setState(() {}),
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
+            SizedBox(
+              height: 44,
+              child: Consumer<CourseProvider>(
+                builder: (context, courseProvider, _) => ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                children: [
+                  _CourseChip(
+                    label: 'All',
+                    selected: _selectedCourseId == null,
+                    cs: cs,
+                    onTap: () => setState(() => _selectedCourseId = null),
+                  ),
+                  for (final c in courseProvider.courses) ...[
+                    const SizedBox(width: 8),
+                    _CourseChip(
+                      label: c['title'] as String,
+                      selected: _selectedCourseId == c['id'],
+                      cs: cs,
+                      onTap: () => setState(() => _selectedCourseId =
+                          _selectedCourseId == c['id']
+                              ? null
+                              : c['id'] as String),
+                    ),
+                  ],
+                  if (_isTeacher) ...[
+                    const SizedBox(width: 8),
+                    _AddCourseChip(
+                      cs: cs,
+                      onTap: () => _showAddCourseDialog(context),
+                    ),
+                  ],
+                ],
+              ),
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -168,6 +185,7 @@ class _BooksScreenState extends State<BooksScreen>
                   selectedCourseId: _selectedCourseId,
                   sort: _sort,
                 ),
+                const _DiscoverTab(),
               ],
             ),
           ),
@@ -210,11 +228,59 @@ class _BooksScreenState extends State<BooksScreen>
     );
   }
 
+  void _showAddCourseDialog(BuildContext context) {
+    final ctrl = TextEditingController();
+    final cs = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Course'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Course name',
+            hintText: 'e.g. Computer Studies',
+            prefixIcon: Icon(Icons.class_outlined),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final title = ctrl.text.trim();
+              if (title.isEmpty) return;
+              final messenger = ScaffoldMessenger.of(context);
+              Navigator.pop(ctx);
+              final ok =
+                  await context.read<CourseProvider>().addCourse(title);
+              if (!context.mounted) return;
+              messenger.showSnackBar(SnackBar(
+                content: Text(ok
+                    ? 'Course "$title" added!'
+                    : 'Could not add course. Check your connection and teacher access.'),
+                backgroundColor: ok ? cs.primary : cs.error,
+                behavior: SnackBarBehavior.floating,
+              ));
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAddBookDialog(BuildContext context) {
     final titleCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
     final pictureCtrl = TextEditingController();
-    String dialogCourse = 'course-001';
+    final courses = context.read<CourseProvider>().courses;
+    String dialogCourse =
+        courses.isNotEmpty ? courses.first['id'] as String : 'course-001';
     final cs = Theme.of(context).colorScheme;
 
     showDialog(
@@ -264,10 +330,10 @@ class _BooksScreenState extends State<BooksScreen>
                       value: dialogCourse,
                       isDense: true,
                       isExpanded: true,
-                      items: _courseMap.entries
-                          .map((e) => DropdownMenuItem(
-                                value: e.key,
-                                child: Text(e.value,
+                      items: courses
+                          .map((c) => DropdownMenuItem(
+                                value: c['id'] as String,
+                                child: Text(c['title'] as String,
                                     overflow: TextOverflow.ellipsis),
                               ))
                           .toList(),
@@ -374,6 +440,44 @@ class _CourseChip extends StatelessWidget {
   }
 }
 
+/// Teacher-only chip that opens the "Add Course" dialog.
+class _AddCourseChip extends StatelessWidget {
+  final ColorScheme cs;
+  final VoidCallback onTap;
+
+  const _AddCourseChip({required this.cs, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: cs.primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: cs.primary.withValues(alpha: 0.45)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add_rounded, size: 15, color: cs.primary),
+            const SizedBox(width: 4),
+            Text(
+              'Add Course',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: cs.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ──────────────────────────────────────────────
 // All Books Tab
 // ──────────────────────────────────────────────
@@ -383,13 +487,6 @@ class _AllBooksTab extends StatelessWidget {
   final bool isTeacher;
   final String? selectedCourseId;
   final BookSort sort;
-
-  static const _courseMap = {
-    'course-001': 'Computer Fundamentals',
-    'course-002': 'Basic Mathematics',
-    'course-003': 'Science and Technology',
-    'course-004': 'English Communication',
-  };
 
   const _AllBooksTab({
     required this.searchQuery,
@@ -429,7 +526,7 @@ class _AllBooksTab extends StatelessWidget {
                   child: _EmptyState(
                     icon: Icons.menu_book_rounded,
                     message: selectedCourseId != null
-                        ? 'No books in\n${_courseMap[selectedCourseId] ?? 'this course'}'
+                        ? 'No books in\n${context.read<CourseProvider>().titleFor(selectedCourseId)}'
                         : searchQuery.isEmpty
                             ? 'No books available'
                             : 'No results for "$searchQuery"',
@@ -459,6 +556,9 @@ class _AllBooksTab extends StatelessWidget {
                   provider.downloadedBooks.any((d) => d['id'] == bookId);
               final isDownloading = provider.isDownloading(bookId);
               final hasFailed = provider.hasFailed(bookId);
+              final label = context
+                  .read<CourseProvider>()
+                  .titleFor(book['course_id'] as String?);
 
               return _BookCard(
                 book: book,
@@ -466,7 +566,7 @@ class _AllBooksTab extends StatelessWidget {
                 isDownloading: isDownloading,
                 hasFailed: hasFailed,
                 isTeacher: isTeacher,
-                courseLabel: _courseMap[book['course_id'] as String? ?? ''],
+                courseLabel: label.isEmpty ? null : label,
                 onTap: isDownloading
                     ? () {}
                     : () => _showDownloadDialog(context, book),
@@ -806,13 +906,6 @@ class _DownloadedTab extends StatelessWidget {
   final String? selectedCourseId;
   final BookSort sort;
 
-  static const _courseMap = {
-    'course-001': 'Computer Fundamentals',
-    'course-002': 'Basic Mathematics',
-    'course-003': 'Science and Technology',
-    'course-004': 'English Communication',
-  };
-
   const _DownloadedTab({required this.selectedCourseId, required this.sort});
 
   @override
@@ -841,7 +934,7 @@ class _DownloadedTab extends StatelessWidget {
                   child: _EmptyState(
                     icon: Icons.download_done_rounded,
                     message: selectedCourseId != null
-                        ? 'No downloaded books in\n${_courseMap[selectedCourseId] ?? 'this course'}'
+                        ? 'No downloaded books in\n${context.read<CourseProvider>().titleFor(selectedCourseId)}'
                         : 'No downloaded books yet.\nTap a book to download it.',
                   ),
                 ),
@@ -859,8 +952,10 @@ class _DownloadedTab extends StatelessWidget {
             itemCount: books.length,
             itemBuilder: (context, index) {
               final book = books[index];
-              final courseLabel =
-                  _courseMap[book['course_id'] as String? ?? ''];
+              final rawLabel = context
+                  .read<CourseProvider>()
+                  .titleFor(book['course_id'] as String?);
+              final courseLabel = rawLabel.isEmpty ? null : rawLabel;
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -944,6 +1039,353 @@ class _DownloadedTab extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+// ──────────────────────────────────────────────
+// Discover (Open Library online search)
+// ──────────────────────────────────────────────
+
+class _DiscoverTab extends StatefulWidget {
+  const _DiscoverTab();
+
+  @override
+  State<_DiscoverTab> createState() => _DiscoverTabState();
+}
+
+class _DiscoverTabState extends State<_DiscoverTab> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<BookProvider>().loadDiscoverDefault();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _search() {
+    FocusScope.of(context).unfocus();
+    context.read<BookProvider>().searchOnline(_ctrl.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            controller: _ctrl,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => _search(),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search free books to read or download...',
+              prefixIcon: const Icon(Icons.travel_explore_rounded),
+              suffixIcon: _ctrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded),
+                      onPressed: () {
+                        _ctrl.clear();
+                        context.read<BookProvider>().clearOnlineSearch();
+                        setState(() {});
+                      },
+                    )
+                  : null,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Consumer<BookProvider>(
+            builder: (context, provider, _) {
+              if (provider.onlineLoading) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (provider.onlineError != null) {
+                return _EmptyState(
+                  icon: Icons.search_off_rounded,
+                  message: provider.onlineError!,
+                );
+              }
+              if (provider.onlineResults.isEmpty) {
+                return _EmptyState(
+                  icon: provider.onlineQuery.isEmpty
+                      ? Icons.auto_stories_rounded
+                      : Icons.search_off_rounded,
+                  message: provider.onlineQuery.isEmpty
+                      ? 'Search thousands of free books\nto download or read online.'
+                      : 'No results for "${provider.onlineQuery}".',
+                );
+              }
+              return GridView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 200,
+                  childAspectRatio: 0.56,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                itemCount: provider.onlineResults.length,
+                itemBuilder: (context, i) =>
+                    _OnlineBookCard(book: provider.onlineResults[i]),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OnlineBookCard extends StatelessWidget {
+  final Map<String, dynamic> book;
+  const _OnlineBookCard({required this.book});
+
+  Future<void> _readOnline(BuildContext context) async {
+    final url = (book['read_url'] as String?) ?? '';
+    if (url.isEmpty) return;
+    final ok = await launchUrl(Uri.parse(url),
+        mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the browser.')),
+      );
+    }
+  }
+
+  Future<void> _download(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final result =
+        await context.read<BookProvider>().downloadOnlineBook(book);
+    if (!context.mounted) return;
+    switch (result) {
+      case OnlineDownloadResult.success:
+        messenger.showSnackBar(SnackBar(
+          content: const Text('Downloaded! Find it in the Downloaded tab.'),
+          backgroundColor: cs.primary,
+          behavior: SnackBarBehavior.floating,
+        ));
+      case OnlineDownloadResult.noPdf:
+        messenger.showSnackBar(const SnackBar(
+          content: Text('No downloadable PDF — opening the online reader.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+        await _readOnline(context);
+      case OnlineDownloadResult.failed:
+        messenger.showSnackBar(SnackBar(
+          content: const Text('Download failed. Check your connection.'),
+          backgroundColor: cs.error,
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Read online',
+            textColor: Colors.white,
+            onPressed: () => _readOnline(context),
+          ),
+        ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final decor = AppDecoration.of(context);
+    final id = book['id'] as String;
+    final downloadable = book['downloadable'] == true;
+    final coverUrl = (book['cover_url'] as String?) ?? '';
+
+    return Consumer<BookProvider>(
+      builder: (context, provider, _) {
+        final downloading = provider.isDownloading(id);
+        final downloaded = provider.isBookDownloaded(id);
+        final failed = provider.hasFailed(id);
+        final progress = provider.downloadProgress(id);
+
+        VoidCallback? onTap;
+        if (!downloading && !downloaded) {
+          onTap = downloadable
+              ? () => _download(context)
+              : () => _readOnline(context);
+        }
+
+        return GestureDetector(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: cs.outlineVariant),
+              boxShadow: decor.softShadow,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (coverUrl.isNotEmpty)
+                        Image.network(
+                          coverUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _BookPlaceholder(cs: cs),
+                        )
+                      else
+                        _BookPlaceholder(cs: cs),
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: downloadable
+                                ? cs.primary
+                                : Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            downloadable ? 'FREE' : 'READ',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (downloaded)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: cs.primary,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.download_done_rounded,
+                                size: 14, color: cs.onPrimary),
+                          ),
+                        )
+                      else
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () => _readOnline(context),
+                              child: const Padding(
+                                padding: EdgeInsets.all(5),
+                                child: Icon(Icons.open_in_new_rounded,
+                                    size: 15, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          book['title'] as String? ?? 'Untitled',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurface,
+                            height: 1.25,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          book['author'] as String? ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              TextStyle(fontSize: 10.5, color: cs.onSurfaceVariant),
+                        ),
+                        const Spacer(),
+                        _statusRow(cs, downloading, downloaded, failed,
+                            downloadable, progress),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _statusRow(ColorScheme cs, bool downloading, bool downloaded,
+      bool failed, bool downloadable, double? progress) {
+    IconData icon;
+    String label;
+    Color color;
+    if (downloading) {
+      final pct = progress != null ? ' ${(progress * 100).round()}%' : '...';
+      return Row(children: [
+        SizedBox(
+          width: 12,
+          height: 12,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: cs.primary,
+            value: (progress != null && progress > 0) ? progress : null,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text('Downloading$pct',
+            style: TextStyle(
+                fontSize: 11, color: cs.primary, fontWeight: FontWeight.w500)),
+      ]);
+    } else if (downloaded) {
+      icon = Icons.check_circle_rounded;
+      label = 'Downloaded';
+      color = cs.primary;
+    } else if (failed) {
+      icon = Icons.error_rounded;
+      label = 'Failed · Retry';
+      color = cs.error;
+    } else if (downloadable) {
+      icon = Icons.download_rounded;
+      label = 'Download';
+      color = cs.onSurfaceVariant;
+    } else {
+      icon = Icons.open_in_new_rounded;
+      label = 'Read online';
+      color = cs.onSurfaceVariant;
+    }
+    return Row(children: [
+      Icon(icon, size: 13, color: color),
+      const SizedBox(width: 4),
+      Text(label,
+          style:
+              TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500)),
+    ]);
   }
 }
 

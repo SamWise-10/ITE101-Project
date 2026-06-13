@@ -111,10 +111,16 @@ drop policy if exists "update own profile" on public.profiles;
 create policy "update own profile" on public.profiles
   for update to authenticated using (auth.uid() = id);
 
--- COURSES: readable by anyone signed in.
+-- COURSES: readable by anyone signed in; only Teachers can add/edit/delete.
 drop policy if exists "courses readable" on public.courses;
 create policy "courses readable" on public.courses
   for select to authenticated using (true);
+
+drop policy if exists "teachers manage courses" on public.courses;
+create policy "teachers manage courses" on public.courses
+  for all to authenticated
+  using      ((select role from public.profiles where id = auth.uid()) = 'Teacher')
+  with check ((select role from public.profiles where id = auth.uid()) = 'Teacher');
 
 -- BOOKS: everyone signed in reads; only Teachers write.
 drop policy if exists "books readable" on public.books;
@@ -149,6 +155,25 @@ create policy "read results" on public.quiz_results
     auth.uid() = student_id
     or (select role from public.profiles where id = auth.uid()) = 'Teacher'
   );
+
+-- ── 4. ITE103 INTEGRATION (Tawi-Tawi backend-to-backend handshake) ──────────
+-- Lets another backend (the central Tawi-Tawi Express API) read this app's
+-- PUBLIC catalog over Supabase's REST API using only the public anon key:
+--   GET https://<project>.supabase.co/rest/v1/books?select=*
+--   headers: apikey: <anon key>, Authorization: Bearer <anon key>
+-- Only public educational content is exposed. Student results / profiles stay
+-- protected (no anon policy), so no private data leaks.
+drop policy if exists "anon read books" on public.books;
+create policy "anon read books" on public.books
+  for select to anon using (true);
+
+drop policy if exists "anon read quizzes" on public.quizzes;
+create policy "anon read quizzes" on public.quizzes
+  for select to anon using (true);
+
+drop policy if exists "anon read courses" on public.courses;
+create policy "anon read courses" on public.courses
+  for select to anon using (true);
 
 -- ════════════════════════════════════════════════════════════════════════
 --  After running this:

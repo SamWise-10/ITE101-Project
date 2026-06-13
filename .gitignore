@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ITE103: local clones of the Tawi-Tawi repos (their own git repos)
+ite103/
