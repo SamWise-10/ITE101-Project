@@ -34,12 +34,15 @@ create table if not exists public.books (
 create table if not exists public.quizzes (
   quiz_id        uuid primary key default gen_random_uuid(),
   question       text not null,
-  quiz_type      text not null,         -- true_false | open_ended
+  quiz_type      text not null,         -- multiple_choice | true_false | fill_blank | enumeration | open_ended
   correct_answer text not null,
   reason         text default '',
   course_id      text default '',
+  options        jsonb,                 -- choices for multiple_choice questions
   created_at     timestamptz default now()
 );
+-- For projects created before the `options` column existed:
+alter table public.quizzes add column if not exists options jsonb;
 
 create table if not exists public.quiz_results (
   id              uuid primary key default gen_random_uuid(),
