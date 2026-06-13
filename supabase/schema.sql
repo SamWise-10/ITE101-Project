@@ -75,19 +75,38 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  base_username  text := coalesce(
+                           nullif(new.raw_user_meta_data->>'username', ''),
+                           split_part(new.email, '@', 1));
+  final_username text := base_username;
+  suffix         int  := 0;
 begin
+  -- Guarantee a unique username so a collision never blocks sign-up
+  -- (Supabase otherwise hides it as a vague "Database error saving new user").
+  while exists (select 1 from public.profiles where username = final_username) loop
+    suffix := suffix + 1;
+    final_username := base_username || suffix::text;
+  end loop;
+
   insert into public.profiles
     (id, email, username, full_name, role, course, student_id, grade_level)
   values (
     new.id,
     new.email,
-    new.raw_user_meta_data->>'username',
+    final_username,
     coalesce(new.raw_user_meta_data->>'full_name', ''),
     coalesce(new.raw_user_meta_data->>'role', 'Student'),
     coalesce(new.raw_user_meta_data->>'course', ''),
     coalesce(new.raw_user_meta_data->>'student_id', ''),
     coalesce(new.raw_user_meta_data->>'grade_level', '')
   );
+  return new;
+exception when others then
+  -- Last-resort safety net: never let a profile hiccup abort account creation.
+  insert into public.profiles (id, email, username)
+    values (new.id, new.email, new.id::text)
+    on conflict (id) do nothing;
   return new;
 end;
 $$;
