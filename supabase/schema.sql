@@ -51,8 +51,11 @@ create table if not exists public.quiz_results (
   score           numeric,
   total_questions int,
   passed          boolean,
+  course_id       text default '',   -- which course this attempt was for
   submitted_at    timestamptz default now()
 );
+-- For projects created before the `course_id` column existed:
+alter table public.quiz_results add column if not exists course_id text default '';
 
 -- Optional: courses (the app also has these IDs hard-coded as a fallback)
 create table if not exists public.courses (
