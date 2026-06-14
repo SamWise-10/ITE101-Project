@@ -209,6 +209,41 @@ This app ships as a **drop-in module** for the Tawi-Tawi super-app. The single e
   ```
   A **back button** (and Android system-back) returns to the host. Guests browse content read-only; teachers manage content from the **standalone** app, and it syncs to the embedded one (same Supabase).
 
+### ▶️ Running the Tawi-Tawi host app (for teammates)
+
+The TDLF-Educ module is **already integrated and committed** in the Tawi-Tawi frontend, so you just clone and run it — no copying needed.
+
+> ⚠️ **Android only.** The host super-app uses Firebase/Agora/LiveKit, which don't run on Windows/desktop or web. Use a **physical Android phone** (USB debugging on) or an **Android emulator**. Don't use `-d windows`/`-d chrome`.
+
+1. **Clone the host repo** (the team's central frontend) and enter it:
+   ```bash
+   git clone https://github.com/unkind-human-being/tawi-tawi-frontend.git
+   cd tawi-tawi-frontend
+   ```
+2. **Get dependencies:**
+   ```bash
+   flutter pub get
+   ```
+3. **Plug in an Android phone** (enable *Developer options → USB debugging*, then accept the prompt) or start an emulator. Confirm it's detected:
+   ```bash
+   flutter devices
+   ```
+4. **Run it** (use your device id from `flutter devices`):
+   ```bash
+   flutter run -d <android-device-id>
+   ```
+   First build takes a few minutes. When it's up, tap the **TDLF-Educ** tile on the Tawi-Tawi home → you'll see our **welcome screen → Continue** → the module (guest mode).
+
+**If the build fails:**
+| Error | Fix |
+|---|---|
+| `... requires Android Gradle plugin 8.9.1` | Already set in the repo. If it reverted, set AGP to **8.9.1** in `android/settings.gradle.kts`. |
+| Gradle crash / *"insufficient memory"* on a low-RAM PC (≈8 GB) | Lower the heap in `android/gradle.properties`, e.g. `org.gradle.jvmargs=-Xmx2560m`. **Keep this change local — don't commit it** (it's machine-specific). |
+| `flutter: command not found` (Windows) | Use the full path, e.g. `C:\…\flutter\bin\flutter.bat run -d <id>`. |
+| Build hangs / device "not found" mid-build | Make sure the phone stays unlocked and connected; re-accept the USB-debugging prompt. |
+
+> Teacher tools (add/edit content, course-scoped monitoring) are used from the **standalone** app; the host opens as a guest by design. Everything syncs through the same Supabase.
+
 ---
 
 ## Project Structure
