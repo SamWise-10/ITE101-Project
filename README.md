@@ -339,3 +339,4 @@ flutter doctor -v           # environment diagnostics
 ---
 
 _Built with Flutter + Supabase for ITE101 / ITE103._
+## ITD101 and ITD103 Final Project
