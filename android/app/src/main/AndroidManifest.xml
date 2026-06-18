@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for cloud access (Supabase, PDF downloads). Flutter injects
+         this automatically for debug/profile builds, so it MUST be declared
+         here or RELEASE builds have no internet ("Couldn't reach the server"). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
         android:label="TDLF-Educ"
         android:name="${applicationName}"

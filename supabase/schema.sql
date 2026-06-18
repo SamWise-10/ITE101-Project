@@ -147,6 +147,12 @@ drop policy if exists "update own profile" on public.profiles;
 create policy "update own profile" on public.profiles
   for update to authenticated using (auth.uid() = id);
 
+-- Lets the app create/repair its OWN profile row from the client (a safety net
+-- in case the handle_new_user trigger is missing or incomplete).
+drop policy if exists "insert own profile" on public.profiles;
+create policy "insert own profile" on public.profiles
+  for insert to authenticated with check (auth.uid() = id);
+
 -- COURSES: readable by anyone signed in; only Teachers can add/edit/delete.
 drop policy if exists "courses readable" on public.courses;
 create policy "courses readable" on public.courses
