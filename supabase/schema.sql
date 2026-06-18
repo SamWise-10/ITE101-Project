@@ -57,6 +57,17 @@ create table if not exists public.quiz_results (
 -- For projects created before the `course_id` column existed:
 alter table public.quiz_results add column if not exists course_id text default '';
 
+-- Per-question attempts (the "History" tab). Stored in the cloud so a student's
+-- history follows their account across devices / the embedded app.
+create table if not exists public.quiz_attempts (
+  id           uuid primary key default gen_random_uuid(),
+  student_id   uuid references auth.users(id) on delete cascade,
+  quiz_id      text,
+  user_answer  text,
+  is_correct   boolean,
+  submitted_at timestamptz default now()
+);
+
 -- Optional: courses (the app also has these IDs hard-coded as a fallback)
 create table if not exists public.courses (
   id          text primary key,
@@ -176,6 +187,20 @@ create policy "insert own result" on public.quiz_results
 
 drop policy if exists "read results" on public.quiz_results;
 create policy "read results" on public.quiz_results
+  for select to authenticated using (
+    auth.uid() = student_id
+    or (select role from public.profiles where id = auth.uid()) = 'Teacher'
+  );
+
+-- QUIZ ATTEMPTS (per-question history): a student inserts/reads their own.
+alter table public.quiz_attempts enable row level security;
+
+drop policy if exists "insert own attempt" on public.quiz_attempts;
+create policy "insert own attempt" on public.quiz_attempts
+  for insert to authenticated with check (auth.uid() = student_id);
+
+drop policy if exists "read own attempts" on public.quiz_attempts;
+create policy "read own attempts" on public.quiz_attempts
   for select to authenticated using (
     auth.uid() = student_id
     or (select role from public.profiles where id = auth.uid()) = 'Teacher'

@@ -184,7 +184,7 @@ First launch: **sign up** (choose Student or Teacher), then sign in. With the se
 | | Student | Teacher |
 |---|---|---|
 | Browse books / take quizzes | ✅ | ✅ |
-| Download books | ✅ | ✅ |
+| Download books | ✅ | ✅ |i
 | Add / edit / delete books | ❌ | ✅ |
 | Add / edit / delete quizzes | ❌ | ✅ |
 | Add courses | ❌ | ✅ |
